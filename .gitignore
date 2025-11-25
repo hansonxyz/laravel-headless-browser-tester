@@ -1,0 +1,8 @@
+node_modules/
+package-lock.json
+.DS_Store
+
+# Deployment files (not for repo)
+deploy_key
+deploy_key.pub
+push.sh
