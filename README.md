@@ -5,8 +5,10 @@ Debug Laravel routes using a headless browser. Captures HTTP response, JavaScrip
 ## Installation
 
 ```bash
-composer require hansonxyz/laravel-headless-browser-tester
+composer require hansonxyz/laravel-headless-browser-tester:@dev
 ```
+
+The package is currently in development and requires the `@dev` stability flag.
 
 The package auto-discovers via Laravel's package discovery.
 
