@@ -38,6 +38,7 @@ function parseArgs() {
         console.log('  --wait-for=<selector>  Wait for element');
         console.log('  --expect-element=<sel> Verify element exists');
         console.log('  --dump-element=<sel>   Extract element HTML');
+        console.log('  --dump-dimensions=<sel> Add layout dimensions to matching elements');
         console.log('  --storage              Display localStorage/sessionStorage');
         console.log('  --eval=<code>          Execute JavaScript');
         console.log('  --timeout=<ms>         Navigation timeout (default: 30000)');
@@ -62,6 +63,7 @@ function parseArgs() {
         wait_for: null,
         expect_element: null,
         dump_element: null,
+        dump_dimensions: null,
         storage: false,
         eval_code: null,
         timeout: 30000,
@@ -102,6 +104,8 @@ function parseArgs() {
             options.expect_element = arg.substring(17);
         } else if (arg.startsWith('--dump-element=')) {
             options.dump_element = arg.substring(15);
+        } else if (arg.startsWith('--dump-dimensions=')) {
+            options.dump_dimensions = arg.substring(18);
         } else if (arg === '--storage') {
             options.storage = true;
         } else if (arg === '--full') {
@@ -350,6 +354,70 @@ function parseArgs() {
             console.log(`FAIL: Expected element '${options.expect_element}' not found`);
             await browser.close();
             process.exit(1);
+        }
+    }
+
+    // Add layout dimensions to elements
+    if (options.dump_dimensions) {
+        const dimensionsResult = await page.evaluate((selector) => {
+            const elements = document.querySelectorAll(selector);
+            if (elements.length === 0) {
+                return { count: 0, error: 'No elements found' };
+            }
+
+            let count = 0;
+            elements.forEach((elem) => {
+                const rect = elem.getBoundingClientRect();
+                const style = window.getComputedStyle(elem);
+
+                // Parse margin values and round to nearest pixel
+                const marginTop = Math.round(parseFloat(style.marginTop) || 0);
+                const marginRight = Math.round(parseFloat(style.marginRight) || 0);
+                const marginBottom = Math.round(parseFloat(style.marginBottom) || 0);
+                const marginLeft = Math.round(parseFloat(style.marginLeft) || 0);
+
+                // Parse padding values and round to nearest pixel
+                const paddingTop = Math.round(parseFloat(style.paddingTop) || 0);
+                const paddingRight = Math.round(parseFloat(style.paddingRight) || 0);
+                const paddingBottom = Math.round(parseFloat(style.paddingBottom) || 0);
+                const paddingLeft = Math.round(parseFloat(style.paddingLeft) || 0);
+
+                // Format margin - use shorthand if all same, otherwise 4 values
+                let margin;
+                if (marginTop === marginRight && marginRight === marginBottom && marginBottom === marginLeft) {
+                    margin = marginTop;
+                } else {
+                    margin = `${marginTop} ${marginRight} ${marginBottom} ${marginLeft}`;
+                }
+
+                // Format padding - use shorthand if all same, otherwise 4 values
+                let padding;
+                if (paddingTop === paddingRight && paddingRight === paddingBottom && paddingBottom === paddingLeft) {
+                    padding = paddingTop;
+                } else {
+                    padding = `${paddingTop} ${paddingRight} ${paddingBottom} ${paddingLeft}`;
+                }
+
+                const dimensions = {
+                    x: Math.round(rect.x),
+                    y: Math.round(rect.y),
+                    w: Math.round(rect.width),
+                    h: Math.round(rect.height),
+                    margin: margin,
+                    padding: padding
+                };
+
+                elem.setAttribute('data-dimensions', JSON.stringify(dimensions));
+                count++;
+            });
+
+            return { count: count };
+        }, options.dump_dimensions);
+
+        if (dimensionsResult.error) {
+            console.log(`\nWarning: ${dimensionsResult.error} for selector '${options.dump_dimensions}'`);
+        } else {
+            console.log(`\nDimensions: Added data-dimensions to ${dimensionsResult.count} element(s) matching '${options.dump_dimensions}'`);
         }
     }
 

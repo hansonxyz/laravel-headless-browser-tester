@@ -39,6 +39,7 @@ class TestRouteCommand extends Command
         {--wait-for= : Wait for CSS selector before capture}
         {--expect-element= : Verify element exists (fails if not found)}
         {--dump-element= : Extract HTML of element by CSS selector}
+        {--dump-dimensions= : Add layout dimensions to matching elements}
         {--storage : Display localStorage and sessionStorage}
         {--eval= : Execute JavaScript and display result}
         {--timeout= : Navigation timeout in milliseconds (default: 30000)}
@@ -140,6 +141,7 @@ class TestRouteCommand extends Command
             'wait-for' => 'wait-for',
             'expect-element' => 'expect-element',
             'dump-element' => 'dump-element',
+            'dump-dimensions' => 'dump-dimensions',
             'storage' => 'storage',
             'eval' => 'eval',
             'timeout' => 'timeout',

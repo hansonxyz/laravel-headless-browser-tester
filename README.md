@@ -55,6 +55,7 @@ php artisan browser:test /page --screenshot-path=/tmp/mobile.png --screenshot-wi
 | `--storage` | Display localStorage/sessionStorage |
 | `--expect-element=<sel>` | Fail if element not found |
 | `--dump-element=<sel>` | Extract element HTML |
+| `--dump-dimensions=<sel>` | Add layout dimensions to matching elements |
 | `--wait-for=<sel>` | Wait for element before capture |
 | `--eval=<code>` | Execute JavaScript |
 | `--post=<json>` | Send POST request |
@@ -90,6 +91,27 @@ class DevAuthMiddleware
 ```
 
 Register in your HTTP kernel for routes you want to test.
+
+## Layout Dimensions
+
+The `--dump-dimensions` option injects `data-dimensions` attributes into matching elements, useful for AI agents or automated tools diagnosing layout issues without visual inspection.
+
+```bash
+# Add dimensions to all cards, then extract container HTML
+php artisan browser:test /page --dump-dimensions=".card" --dump-element=".container"
+```
+
+Each matching element receives a `data-dimensions` attribute with JSON:
+
+```html
+<div class="card" data-dimensions='{"x":20,"y":100,"w":300,"h":200,"margin":0,"padding":"20 15 20 15"}'>
+```
+
+Fields:
+- `x`, `y` - Absolute position on page
+- `w`, `h` - Element width and height
+- `margin` - Single value if uniform, or "top right bottom left"
+- `padding` - Single value if uniform, or "top right bottom left"
 
 ## Configuration
 
