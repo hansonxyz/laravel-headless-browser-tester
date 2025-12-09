@@ -1,6 +1,6 @@
 # Laravel Headless Browser Tester
 
-Debug Laravel routes using a headless browser. Captures HTTP response, JavaScript console output, XHR requests, DOM state, cookies, storage, and screenshots.
+Debug Laravel routes using a headless browser. Captures HTTP response, JavaScript console output, XHR requests, DOM state, cookies, storage, and screenshots. Supports authenticated user testing and async JavaScript evaluation.
 
 ## Installation
 
