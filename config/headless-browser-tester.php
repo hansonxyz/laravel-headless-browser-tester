@@ -60,6 +60,17 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Username Field
+    |--------------------------------------------------------------------------
+    |
+    | The field to use when looking up users by username (non-numeric --user).
+    | Common values: 'email', 'username', 'name'
+    |
+    */
+    'username_field' => env('HEADLESS_TESTER_USERNAME_FIELD', 'email'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Session Cookie Name
     |--------------------------------------------------------------------------
     |

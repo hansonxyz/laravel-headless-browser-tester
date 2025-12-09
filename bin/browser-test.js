@@ -25,7 +25,8 @@ function parseArgs() {
         console.log('Usage: node browser-test.js <route> [options]');
         console.log('');
         console.log('Options:');
-        console.log('  --user-id=<id>         Test as specific user ID');
+        console.log('  --user-id=<id>         Test as specific user ID or username');
+        console.log('  --auth-key=<key>       Authentication key (required with --user-id)');
         console.log('  --no-body              Suppress response body');
         console.log('  --follow-redirects     Follow redirects and show chain');
         console.log('  --headers              Display response headers');
@@ -40,7 +41,8 @@ function parseArgs() {
         console.log('  --dump-element=<sel>   Extract element HTML');
         console.log('  --dump-dimensions=<sel> Add layout dimensions to matching elements');
         console.log('  --storage              Display localStorage/sessionStorage');
-        console.log('  --eval=<code>          Execute JavaScript');
+        console.log('  --eval=<code>          Execute async JavaScript after page loads (supports await)');
+        console.log('                         Example: --eval="$(\'button\').click(); await new Promise(r => setTimeout(r, 2000));"');
         console.log('  --timeout=<ms>         Navigation timeout (default: 30000)');
         console.log('  --screenshot-path=<p>  Save screenshot');
         console.log('  --screenshot-width=<w> Width (px or: mobile, tablet, desktop)');
@@ -51,6 +53,7 @@ function parseArgs() {
     const options = {
         route: null,
         user_id: null,
+        auth_key: null,
         no_body: false,
         follow_redirects: false,
         headers: false,
@@ -75,6 +78,8 @@ function parseArgs() {
     for (const arg of args) {
         if (arg.startsWith('--user-id=')) {
             options.user_id = arg.split('=')[1];
+        } else if (arg.startsWith('--auth-key=')) {
+            options.auth_key = arg.split('=')[1];
         } else if (arg === '--no-body') {
             options.no_body = true;
         } else if (arg === '--follow-redirects') {
@@ -253,6 +258,10 @@ function parseArgs() {
 
     if (options.user_id) {
         extraHeaders['X-Dev-Auth-User-Id'] = options.user_id;
+    }
+
+    if (options.auth_key) {
+        extraHeaders['X-Dev-Auth-Key'] = options.auth_key;
     }
 
     await page.route('**/*', async (route, request) => {
@@ -437,15 +446,26 @@ function parseArgs() {
         }
     }
 
-    // Execute JavaScript
+    // Execute JavaScript (supports async/await for post-load interactions)
+    // This runs AFTER page is fully loaded and ready
     if (options.eval_code) {
         try {
-            const result = await page.evaluate(code => {
+            const result = await page.evaluate(async (code) => {
                 try {
-                    const r = eval(code);
+                    // Wrap code in async function to support await
+                    const asyncFunc = new Function('return (async () => { ' + code + ' })()');
+                    const r = await asyncFunc();
+
+                    // Convert result to string representation
                     if (r === undefined) return 'undefined';
                     if (r === null) return 'null';
-                    if (typeof r === 'object') return JSON.stringify(r, null, 2);
+                    if (typeof r === 'object') {
+                        try {
+                            return JSON.stringify(r, null, 2);
+                        } catch (e) {
+                            return String(r);
+                        }
+                    }
                     return String(r);
                 } catch (e) {
                     return `Error: ${e.message}`;

@@ -26,7 +26,8 @@ class TestRouteCommand extends Command
 {
     protected $signature = 'browser:test
         {url? : The URL to test (e.g., /dashboard, /api/users)}
-        {--user= : Test as specific user ID (bypasses authentication)}
+        {--user= : Test as specific user ID or username (requires middleware)}
+        {--install-middleware : Install HeadlessBrowserTesterAuth middleware}
         {--no-body : Suppress HTTP response body}
         {--follow-redirects : Follow HTTP redirects and show redirect chain}
         {--headers : Display all HTTP response headers}
@@ -56,6 +57,11 @@ class TestRouteCommand extends Command
             return 1;
         }
 
+        // Handle middleware installation
+        if ($this->option('install-middleware')) {
+            return $this->install_middleware();
+        }
+
         $url = $this->argument('url');
         if (!$url) {
             $this->error('No URL provided.');
@@ -67,7 +73,29 @@ class TestRouteCommand extends Command
             $this->line('  php artisan browser:test /admin --user=1');
             $this->line('  php artisan browser:test /api/data --xhr-list');
             $this->line('  php artisan browser:test /page --screenshot-path=/tmp/shot.png');
+            $this->line('');
+            $this->line('Post-load interactions (click buttons, test modals):');
+            $this->line('  php artisan browser:test /page --user=1 --eval="$(\'button\').click(); await new Promise(r => setTimeout(r, 2000));"');
+            $this->line('  php artisan browser:test /form --eval="$(\'#submit\').click(); await new Promise(r => setTimeout(r, 1000));"');
+            $this->line('');
+            $this->line('To install authentication middleware:');
+            $this->line('  php artisan browser:test --install-middleware');
             return 1;
+        }
+
+        // Check middleware when --user is specified
+        if ($this->option('user')) {
+            if (!$this->middleware_is_registered()) {
+                $this->error('HeadlessBrowserTesterAuth middleware is not registered.');
+                $this->line('');
+                $this->line('The --user option requires the HeadlessBrowserTesterAuth middleware.');
+                $this->line('');
+                $this->line('To install it automatically:');
+                $this->line('  php artisan browser:test --install-middleware');
+                $this->line('');
+                $this->line('Or see the README.md for manual installation instructions.');
+                return 1;
+            }
         }
 
         if (!str_starts_with($url, '/')) {
@@ -159,6 +187,12 @@ class TestRouteCommand extends Command
             }
         }
 
+        // Add auth key when user impersonation is requested
+        if ($this->option('user')) {
+            $auth_key = $this->generate_auth_key();
+            $args[] = "--auth-key={$auth_key}";
+        }
+
         // Validate timeout
         $timeout = $this->option('timeout') ?? 30000;
         $timeout = intval($timeout);
@@ -186,5 +220,187 @@ class TestRouteCommand extends Command
         });
 
         return $process->isSuccessful() ? 0 : 1;
+    }
+
+    /**
+     * Generate the auth key from the Laravel app key.
+     */
+    protected function generate_auth_key(): string
+    {
+        $app_key = config('app.key');
+
+        // Remove base64: prefix if present
+        if (str_starts_with($app_key, 'base64:')) {
+            $app_key = base64_decode(substr($app_key, 7));
+        }
+
+        return hash('sha256', $app_key . ':headless-browser-tester');
+    }
+
+    /**
+     * Check if the HeadlessBrowserTesterAuth middleware is registered.
+     */
+    protected function middleware_is_registered(): bool
+    {
+        // Check if our middleware class exists in the app
+        $app_middleware_path = app_path('Http/Middleware/HeadlessBrowserTesterAuth.php');
+
+        if (file_exists($app_middleware_path)) {
+            return true;
+        }
+
+        // Also check if using the package middleware directly
+        $kernel_path = app_path('Http/Kernel.php');
+        $bootstrap_path = base_path('bootstrap/app.php');
+
+        // Laravel 11+ uses bootstrap/app.php
+        if (file_exists($bootstrap_path)) {
+            $bootstrap_content = file_get_contents($bootstrap_path);
+            if (str_contains($bootstrap_content, 'HeadlessBrowserTesterAuth')) {
+                return true;
+            }
+        }
+
+        // Laravel 10 uses Http/Kernel.php
+        if (file_exists($kernel_path)) {
+            $kernel_content = file_get_contents($kernel_path);
+            if (str_contains($kernel_content, 'HeadlessBrowserTesterAuth')) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Install the HeadlessBrowserTesterAuth middleware.
+     */
+    protected function install_middleware(): int
+    {
+        // Check if already installed
+        $app_middleware_path = app_path('Http/Middleware/HeadlessBrowserTesterAuth.php');
+
+        if (file_exists($app_middleware_path)) {
+            $this->info('HeadlessBrowserTesterAuth middleware already exists.');
+            return 0;
+        }
+
+        // Create the middleware directory if it doesn't exist
+        $middleware_dir = app_path('Http/Middleware');
+        if (!is_dir($middleware_dir)) {
+            mkdir($middleware_dir, 0755, true);
+        }
+
+        // Copy the middleware file
+        $source_middleware = dirname(__DIR__) . '/Middleware/HeadlessBrowserTesterAuth.php';
+        $middleware_content = file_get_contents($source_middleware);
+
+        // Update namespace for app
+        $middleware_content = str_replace(
+            'namespace Hansonxyz\\HeadlessBrowserTester\\Middleware;',
+            'namespace App\\Http\\Middleware;',
+            $middleware_content
+        );
+
+        file_put_contents($app_middleware_path, $middleware_content);
+        $this->info('Created: app/Http/Middleware/HeadlessBrowserTesterAuth.php');
+
+        // Register the middleware
+        $registered = $this->register_middleware_in_app();
+
+        if ($registered) {
+            $this->info('Middleware registered successfully.');
+            $this->line('');
+            $this->line('You can now use: php artisan browser:test /route --user=1');
+        } else {
+            $this->warn('Could not auto-register middleware. Please register manually.');
+            $this->line('');
+            $this->line('For Laravel 11+, add to bootstrap/app.php:');
+            $this->line('  ->withMiddleware(function (Middleware $middleware) {');
+            $this->line('      $middleware->append(\\App\\Http\\Middleware\\HeadlessBrowserTesterAuth::class);');
+            $this->line('  })');
+            $this->line('');
+            $this->line('For Laravel 10, add to app/Http/Kernel.php $middleware array:');
+            $this->line('  \\App\\Http\\Middleware\\HeadlessBrowserTesterAuth::class,');
+        }
+
+        return 0;
+    }
+
+    /**
+     * Register middleware in the Laravel application.
+     */
+    protected function register_middleware_in_app(): bool
+    {
+        // Try Laravel 11+ style (bootstrap/app.php)
+        $bootstrap_path = base_path('bootstrap/app.php');
+
+        if (file_exists($bootstrap_path)) {
+            $content = file_get_contents($bootstrap_path);
+
+            // Check if already registered
+            if (str_contains($content, 'HeadlessBrowserTesterAuth')) {
+                return true;
+            }
+
+            // Look for withMiddleware section
+            if (preg_match('/->withMiddleware\s*\(\s*function\s*\(\s*Middleware\s+\$middleware\s*\)\s*\{/', $content)) {
+                // Add to existing withMiddleware
+                $content = preg_replace(
+                    '/(->withMiddleware\s*\(\s*function\s*\(\s*Middleware\s+\$middleware\s*\)\s*\{)/',
+                    "$1\n        \$middleware->append(\\App\\Http\\Middleware\\HeadlessBrowserTesterAuth::class);",
+                    $content
+                );
+                file_put_contents($bootstrap_path, $content);
+                return true;
+            }
+
+            // Look for ->create() or ->withRouting to insert withMiddleware before
+            if (preg_match('/(->withRouting\s*\()/', $content)) {
+                $middleware_block = "->withMiddleware(function (Middleware \$middleware) {\n        \$middleware->append(\\App\\Http\\Middleware\\HeadlessBrowserTesterAuth::class);\n    })\n    ";
+                $content = preg_replace(
+                    '/(->withRouting\s*\()/',
+                    $middleware_block . '$1',
+                    $content
+                );
+
+                // Add use statement if not present
+                if (!str_contains($content, 'use Illuminate\\Foundation\\Configuration\\Middleware')) {
+                    $content = preg_replace(
+                        '/(use Illuminate\\\\Foundation\\\\Application;)/',
+                        "$1\nuse Illuminate\\Foundation\\Configuration\\Middleware;",
+                        $content
+                    );
+                }
+
+                file_put_contents($bootstrap_path, $content);
+                return true;
+            }
+        }
+
+        // Try Laravel 10 style (Http/Kernel.php)
+        $kernel_path = app_path('Http/Kernel.php');
+
+        if (file_exists($kernel_path)) {
+            $content = file_get_contents($kernel_path);
+
+            // Check if already registered
+            if (str_contains($content, 'HeadlessBrowserTesterAuth')) {
+                return true;
+            }
+
+            // Add to $middleware array
+            if (preg_match('/protected\s+\$middleware\s*=\s*\[/', $content)) {
+                $content = preg_replace(
+                    '/(protected\s+\$middleware\s*=\s*\[)/',
+                    "$1\n        \\App\\Http\\Middleware\\HeadlessBrowserTesterAuth::class,",
+                    $content
+                );
+                file_put_contents($kernel_path, $content);
+                return true;
+            }
+        }
+
+        return false;
     }
 }
